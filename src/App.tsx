@@ -12,7 +12,8 @@ import { addWallet, updateWalletActivity, updateWalletSwapAmount } from './servi
 import { 
   getExchangeRate, 
   recordTransaction, 
-  initializeExchangeRates 
+  initializeExchangeRates,
+  exchangeTONForFUS
 } from './services/exchangeService';
 import { fetchTonEcosystemCoins } from './services/marketService';
 import { getUserByReferralCode, recordReferral } from './services/userService';
@@ -134,6 +135,13 @@ function App() {
           rate: tonRate
         },
         {
+          id: 'fus',
+          name: 'FusToken',
+          symbol: 'FUS',
+          icon: <Diamond className="h-5 w-5 text-yellow-400" />,
+          rate: 1.2
+        },
+        {
           id: 'usdt',
           name: 'Tether',
           symbol: 'USDT',
@@ -170,7 +178,7 @@ function App() {
         setSelectedSendCurrency(allCurrencies[0]); // TON
       }
       if (!selectedReceiveCurrency) {
-        setSelectedReceiveCurrency(allCurrencies[1]); // USDT
+        setSelectedReceiveCurrency(allCurrencies.find(c => c.id === 'fus')); // FUS
       }
     } catch (error) {
       console.error('Error loading currencies:', error);
@@ -460,6 +468,9 @@ function App() {
       const result = await tonConnectUI.sendTransaction(transaction);
       
       if (result) {
+        if (selectedReceiveCurrency.symbol === 'FUS') {
+          await exchangeTONForFUS(amount, userFriendlyAddress);
+        }
         await processSuccessfulSwap(amount);
       }
     } catch (error) {
@@ -520,457 +531,457 @@ function App() {
       }
     }
     
-    // Record transaction in Firebase
-    await recordTransaction(
-      userFriendlyAddress,
-      amount,
-      'swap',
-      { 
-        fromCurrency: selectedSendCurrency.symbol,
-        toCurrency: selectedReceiveCurrency.symbol,
-        sendAmount: amount,
-        receiveAmount: parseFloat(receiveAmount),
-        sendRate: selectedSendCurrency.rate,
-        receiveRate: selectedReceiveCurrency.rate,
-        voucherApplied: voucherApplied,
-        bonusApplied: bonusApplied,
-        referralCode: referralCode
-      }
-    );
-    
-    // Update wallet swap amount and activity
-    await updateWalletSwapAmount(userFriendlyAddress, amount);
-    
-    // Show success message
-    alert(`Swap successful! You will receive ${receiveAmount} ${selectedReceiveCurrency.symbol}.`);
-    
-    // Reset form
-    setSendAmount('0');
-  };
-
-  // Swap the currencies
-  const handleSwapCurrencies = () => {
-    if (selectedSendCurrency && selectedReceiveCurrency) {
-      const temp = selectedSendCurrency;
-      setSelectedSendCurrency(selectedReceiveCurrency);
-      setSelectedReceiveCurrency(temp);
+  // Record transaction in Firebase
+  await recordTransaction(
+    userFriendlyAddress,
+    amount,
+    'swap',
+    { 
+      fromCurrency: selectedSendCurrency.symbol,
+      toCurrency: selectedReceiveCurrency.symbol,
+      sendAmount: amount,
+      receiveAmount: parseFloat(receiveAmount),
+      sendRate: selectedSendCurrency.rate,
+      receiveRate: selectedReceiveCurrency.rate,
+      voucherApplied: voucherApplied,
+      bonusApplied: bonusApplied,
+      referralCode: referralCode
     }
-  };
+  );
+  
+  // Update wallet swap amount and activity
+  await updateWalletSwapAmount(userFriendlyAddress, amount);
+  
+  // Show success message
+  alert(`Swap successful! You will receive ${receiveAmount} ${selectedReceiveCurrency.symbol}.`);
+  
+  // Reset form
+  setSendAmount('0');
+};
 
-  // Load saved voucher from localStorage on component mount
-  useEffect(() => {
-    const savedVoucher = localStorage.getItem('activeVoucher');
-    if (savedVoucher) {
-      try {
-        setActiveVoucher(JSON.parse(savedVoucher));
-      } catch (e) {
-        console.error('Failed to parse saved voucher', e);
-        localStorage.removeItem('activeVoucher');
-      }
+// Swap the currencies
+const handleSwapCurrencies = () => {
+  if (selectedSendCurrency && selectedReceiveCurrency) {
+    const temp = selectedSendCurrency;
+    setSelectedSendCurrency(selectedReceiveCurrency);
+    setSelectedReceiveCurrency(temp);
+  }
+};
+
+// Load saved voucher from localStorage on component mount
+useEffect(() => {
+  const savedVoucher = localStorage.getItem('activeVoucher');
+  if (savedVoucher) {
+    try {
+      setActiveVoucher(JSON.parse(savedVoucher));
+    } catch (e) {
+      console.error('Failed to parse saved voucher', e);
+      localStorage.removeItem('activeVoucher');
     }
-  }, []);
-
-  // Handle admin login result
-  const handleAdminLogin = (success: boolean) => {
-    if (success) {
-      setShowAdminLogin(false);
-      setShowAdminPanel(true);
-      // Update URL without reloading the page
-      window.history.pushState({}, '', '/admin-panel');
-    }
-  };
-
-  // Get voucher status text
-  const getVoucherStatusText = (voucher: Voucher | null): string => {
-    if (!voucher) return '';
-    
-    const usedTransactions = voucher.usedTransactions || 0;
-    const transactionLimit = voucher.transactionLimit || 3;
-    
-    if (usedTransactions >= transactionLimit) {
-      return 'Expired';
-    }
-    
-    return `${usedTransactions}/${transactionLimit} used`;
-  };
-
-  // Navigate to user login page
-  const navigateToUserLogin = () => {
-    window.location.href = '/user-login';
-  };
-
-  // If we're showing the admin login page, render only that
-  if (showAdminLogin) {
-    return <AdminLogin onLogin={handleAdminLogin} />;
   }
+}, []);
 
-  // If we're showing the register user page, render only that
-  if (showRegisterUserPage) {
-    return <UserRegistrationPage />;
+// Handle admin login result
+const handleAdminLogin = (success: boolean) => {
+  if (success) {
+    setShowAdminLogin(false);
+    setShowAdminPanel(true);
+    // Update URL without reloading the page
+    window.history.pushState({}, '', '/admin-panel');
   }
+};
 
-  // If we're showing the user login page, render only that
-  if (showUserLoginPage) {
-    return <UserLoginPage />;
+// Get voucher status text
+const getVoucherStatusText = (voucher: Voucher | null): string => {
+  if (!voucher) return '';
+  
+  const usedTransactions = voucher.usedTransactions || 0;
+  const transactionLimit = voucher.transactionLimit || 3;
+  
+  if (usedTransactions >= transactionLimit) {
+    return 'Expired';
   }
+  
+  return `${usedTransactions}/${transactionLimit} used`;
+};
 
-  // If we're showing the user dashboard, render only that
-  if (showUserDashboard) {
-    return <UserDashboard />;
-  }
+// Navigate to user login page
+const navigateToUserLogin = () => {
+  window.location.href = '/user-login';
+};
 
-  // If we're showing the user create page, render only that
-  if (showUserCreatePage) {
-    return <UserCreatePage />;
-  }
+// If we're showing the admin login page, render only that
+if (showAdminLogin) {
+  return <AdminLogin onLogin={handleAdminLogin} />;
+}
 
-  return (
-    <div className="min-h-screen bg-black text-white flex flex-col items-center">
-      {/* Header */}
-      <header className="w-full p-4 flex justify-between items-center">
-        <div className="flex items-center space-x-1">
-          <Diamond className="h-5 w-5 text-blue-400" />
-          <span className="font-bold">FastSwap</span>
-        </div>
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={navigateToUserLogin}
-            className="flex items-center space-x-1 px-3 py-1 rounded-lg text-sm bg-gray-800 hover:bg-gray-700 mr-2"
+// If we're showing the register user page, render only that
+if (showRegisterUserPage) {
+  return <UserRegistrationPage />;
+}
+
+// If we're showing the user login page, render only that
+if (showUserLoginPage) {
+  return <UserLoginPage />;
+}
+
+// If we're showing the user dashboard, render only that
+if (showUserDashboard) {
+  return <UserDashboard />;
+}
+
+// If we're showing the user create page, render only that
+if (showUserCreatePage) {
+  return <UserCreatePage />;
+}
+
+return (
+  <div className="min-h-screen bg-black text-white flex flex-col items-center">
+    {/* Header */}
+    <header className="w-full p-4 flex justify-between items-center">
+      <div className="flex items-center space-x-1">
+        <Diamond className="h-5 w-5 text-blue-400" />
+        <span className="font-bold">FastSwap</span>
+      </div>
+      <div className="flex items-center space-x-2">
+        <button
+          onClick={navigateToUserLogin}
+          className="flex items-center space-x-1 px-3 py-1 rounded-lg text-sm bg-gray-800 hover:bg-gray-700 mr-2"
+        >
+          <User className="h-4 w-4" />
+          <span>User Login</span>
+        </button>
+        <TonConnectButton />
+      </div>
+    </header>
+
+    {/* Main Content */}
+    <div className="flex-1 flex flex-col items-center justify-center w-full max-w-md px-4">
+      <div className="w-full bg-gray-900 rounded-xl p-4 shadow-lg">
+        {/* Referral Banner */}
+        {referralCode && (
+          <div className="mb-3 bg-green-900/30 rounded-lg p-2 text-center">
+            <span className="text-sm text-green-400">Using referral code: {referralCode}</span>
+          </div>
+        )}
+        
+        {/* Exchange Card */}
+        <div className="mb-4 relative">
+          <button 
+            onClick={handleRefresh} 
+            className={`absolute right-2 top-2 p-1 ${isRefreshingRate ? 'text-blue-400 animate-spin' : 'text-gray-400 hover:text-white'}`}
+            disabled={isRefreshingRate}
           >
-            <User className="h-4 w-4" />
-            <span>User Login</span>
+            <RefreshCw className="h-4 w-4" />
           </button>
-          <TonConnectButton />
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col items-center justify-center w-full max-w-md px-4">
-        <div className="w-full bg-gray-900 rounded-xl p-4 shadow-lg">
-          {/* Referral Banner */}
-          {referralCode && (
-            <div className="mb-3 bg-green-900/30 rounded-lg p-2 text-center">
-              <span className="text-sm text-green-400">Using referral code: {referralCode}</span>
+          
+          {/* Active Voucher Display */}
+          {activeVoucher && (
+            <div className={`mb-3 ${
+              (activeVoucher.usedTransactions || 0) >= (activeVoucher.transactionLimit || 3)
+                ? 'bg-red-900/30'
+                : 'bg-blue-900/30'
+            } rounded-lg p-2 flex items-center justify-between`}>
+              <div className="flex items-center">
+                <Ticket className="h-4 w-4 text-blue-400 mr-2" />
+                <div>
+                  <span className="text-sm">
+                    {activeVoucher.name}: {
+                      (activeVoucher.usedTransactions || 0) >= (activeVoucher.transactionLimit || 3)
+                        ? 'Expired'
+                        : `+${activeVoucher.bonus}% bonus`
+                    }
+                  </span>
+                  <div className="text-xs text-gray-400">
+                    {getVoucherStatusText(activeVoucher)}
+                  </div>
+                </div>
+              </div>
+              <button 
+                onClick={() => {
+                  setActiveVoucher(null);
+                  localStorage.removeItem('activeVoucher');
+                }} 
+                className="text-gray-400 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
           )}
           
-          {/* Exchange Card */}
-          <div className="mb-4 relative">
+          {/* Error Message */}
+          {swapError && (
+            <div className="mb-3 bg-red-900/30 border border-red-800 rounded-lg p-2 text-center">
+              <span className="text-sm text-red-400">{swapError}</span>
+            </div>
+          )}
+          
+          {/* TON Only Warning */}
+          {selectedSendCurrency && selectedSendCurrency.symbol !== 'TON' && (
+            <div className="mb-3 bg-yellow-900/30 border border-yellow-800 rounded-lg p-2">
+              <div className="flex items-start">
+                <AlertTriangle className="h-5 w-5 text-yellow-500 mr-2 flex-shrink-0 mt-0.5" />
+                <span className="text-sm text-yellow-400">
+                  Currently, only sending TON is supported through TON Connect. Please select TON as your send currency.
+                </span>
+              </div>
+            </div>
+          )}
+          
+          {/* Send Section */}
+          <div className="mb-4">
+            <div className="text-sm text-gray-400 mb-1">You send</div>
+            <div className="flex items-center bg-gray-800 rounded-lg p-3">
+              <input
+                type="text"
+                value={sendAmount}
+                onChange={handleSendAmountChange}
+                className="bg-transparent text-2xl w-full outline-none"
+              />
+              <div className="relative">
+                <button 
+                  onClick={() => setShowCurrencyDropdown(!showCurrencyDropdown)}
+                  className="flex items-center space-x-2 bg-gray-700 px-3 py-1 rounded-lg"
+                >
+                  {selectedSendCurrency ? (
+                    <>
+                      {selectedSendCurrency.icon}
+                      <span>{selectedSendCurrency.symbol}</span>
+                      <ChevronDown className="h-4 w-4" />
+                    </>
+                  ) : (
+                    <span>Select</span>
+                  )}
+                </button>
+                
+                {showCurrencyDropdown && (
+                  <div className="absolute right-0 mt-1 w-48 bg-gray-800 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto">
+                    {isLoadingCurrencies ? (
+                      <div className="p-3 text-center text-gray-400">
+                        <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-1"></div>
+                        Loading...
+                      </div>
+                    ) : (
+                      availableCurrencies.map((currency) => (
+                        <button
+                          key={currency.id}
+                          className={`w-full text-left p-3 flex items-center space-x-2 hover:bg-gray-700 ${
+                            selectedSendCurrency?.id === currency.id ? 'bg-blue-900/30' : ''
+                          }`}
+                          onClick={() => {
+                            setSelectedSendCurrency(currency);
+                            setShowCurrencyDropdown(false);
+                          }}
+                        >
+                          {currency.icon}
+                          <div>
+                            <div>{currency.symbol}</div>
+                            <div className="text-xs text-gray-400">{currency.name}</div>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              {selectedSendCurrency && `$${(parseFloat(sendAmount || '0') * selectedSendCurrency.rate).toFixed(2)}`}
+            </div>
+          </div>
+          
+          {/* Arrow */}
+          <div className="flex justify-center my-2">
             <button 
-              onClick={handleRefresh} 
-              className={`absolute right-2 top-2 p-1 ${isRefreshingRate ? 'text-blue-400 animate-spin' : 'text-gray-400 hover:text-white'}`}
-              disabled={isRefreshingRate}
+              onClick={handleSwapCurrencies}
+              className="p-2 rounded-full bg-gray-800 hover:bg-gray-700"
             >
-              <RefreshCw className="h-4 w-4" />
+              <ArrowDownUp className="text-gray-400" />
             </button>
-            
-            {/* Active Voucher Display */}
-            {activeVoucher && (
-              <div className={`mb-3 ${
-                (activeVoucher.usedTransactions || 0) >= (activeVoucher.transactionLimit || 3)
-                  ? 'bg-red-900/30'
-                  : 'bg-blue-900/30'
-              } rounded-lg p-2 flex items-center justify-between`}>
-                <div className="flex items-center">
-                  <Ticket className="h-4 w-4 text-blue-400 mr-2" />
-                  <div>
-                    <span className="text-sm">
-                      {activeVoucher.name}: {
-                        (activeVoucher.usedTransactions || 0) >= (activeVoucher.transactionLimit || 3)
-                          ? 'Expired'
-                          : `+${activeVoucher.bonus}% bonus`
-                      }
-                    </span>
-                    <div className="text-xs text-gray-400">
-                      {getVoucherStatusText(activeVoucher)}
-                    </div>
+          </div>
+          
+          {/* Receive Section */}
+          <div>
+            <div className="text-sm text-gray-400 mb-1">You receive</div>
+            <div className="flex items-center bg-gray-800 rounded-lg p-3">
+              <div className="text-2xl w-full">{receiveAmount}</div>
+              <div className="relative">
+                <button 
+                  onClick={() => setShowReceiveCurrencyDropdown(!showReceiveCurrencyDropdown)}
+                  className="flex items-center space-x-2 bg-gray-700 px-3 py-1 rounded-lg"
+                >
+                  {selectedReceiveCurrency ? (
+                    <>
+                      {selectedReceiveCurrency.icon}
+                      <span>{selectedReceiveCurrency.symbol}</span>
+                      <ChevronDown className="h-4 w-4" />
+                    </>
+                  ) : (
+                    <span>Select</span>
+                  )}
+                </button>
+                
+                {showReceiveCurrencyDropdown && (
+                  <div className="absolute right-0 mt-1 w-48 bg-gray-800 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto">
+                    {isLoadingCurrencies ? (
+                      <div className="p-3 text-center text-gray-400">
+                        <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-1"></div>
+                        Loading...
+                      </div>
+                    ) : (
+                      availableCurrencies.map((currency) => (
+                        <button
+                          key={currency.id}
+                          className={`w-full text-left p-3 flex items-center space-x-2 hover:bg-gray-700 ${
+                            selectedReceiveCurrency?.id === currency.id ? 'bg-blue-900/30' : ''
+                          }`}
+                          onClick={() => {
+                            setSelectedReceiveCurrency(currency);
+                            setShowReceiveCurrencyDropdown(false);
+                          }}
+                        >
+                          {currency.icon}
+                          <div>
+                            <div>{currency.symbol}</div>
+                            <div className="text-xs text-gray-400">{currency.name}</div>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              {selectedReceiveCurrency && `$${(parseFloat(receiveAmount || '0') * selectedReceiveCurrency.rate).toFixed(2)}`}
+            </div>
+          </div>
+        </div>
+        
+        {/* Action Buttons */}
+        <div className="space-y-2">
+          {/* Connect/Swap Button */}
+          <button 
+            className={`w-full py-3 rounded-lg text-center font-medium ${
+              isSwapping 
+                ? 'bg-gray-700 cursor-not-allowed' 
+                : isConnected 
+                  ? selectedSendCurrency?.symbol !== 'TON'
+                    ? 'bg-gray-600 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700' 
+                  : 'bg-blue-500 hover:bg-blue-600'
+            }`}
+            onClick={handleSwap}
+            disabled={isSwapping || (isConnected && selectedSendCurrency?.symbol !== 'TON')}
+          >
+            {isSwapping ? (
+              <div className="flex items-center justify-center">
+                <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full mr-2"></div>
+                <span>Processing...</span>
+              </div>
+            ) : !isConnected ? 'Connect Wallet' : 
+               selectedSendCurrency?.symbol !== 'TON' ? 'Select TON to Send' : 'Swap'}
+          </button>
+          
+          {/* Voucher Button - Only show when connected */}
+          {isConnected && (
+            <button 
+              className="w-full py-3 rounded-lg text-center font-medium bg-indigo-600 hover:bg-indigo-700 flex items-center justify-center"
+              onClick={() => setShowVoucherModal(true)}
+            >
+              <Ticket className="h-4 w-4 mr-2" />
+              {activeVoucher ? 'Change Voucher' : 'Buy Voucher'}
+            </button>
+          )}
+        </div>
+        
+        {/* Disclaimer */}
+        <div className="mt-4 text-xs text-gray-500 text-center">
+          <p>All transactions are processed through TON Connect.</p>
+          <p className="mt-1">Currently, only TON can be sent directly through the wallet.</p>
+        </div>
+      </div>
+    </div>
+
+    {/* Voucher Modal */}
+    {showVoucherModal && (
+      <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+        <div className="bg-gray-900 rounded-xl p-5 w-full max-w-md">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-bold">Select a Voucher</h3>
+            <button 
+              onClick={() => setShowVoucherModal(false)}
+              className="text-gray-400 hover:text-white"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          
+          <div className="space-y-3">
+            {vouchers.map((voucher) => (
+              <div 
+                key={voucher.id}
+                className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                  activeVoucher?.id === voucher.id 
+                    ? 'border-blue-500 bg-blue-900/20' 
+                    : 'border-gray-700 hover:border-gray-500'
+                }`}
+              >
+                <div className="flex justify-between items-center mb-2">
+                  <h4 className="font-medium">{voucher.name}</h4>
+                  <div className="bg-blue-900/50 px-2 py-1 rounded text-sm">
+                    +{voucher.bonus}%
                   </div>
                 </div>
-                <button 
-                  onClick={() => {
-                    setActiveVoucher(null);
-                    localStorage.removeItem('activeVoucher');
-                  }} 
-                  className="text-gray-400 hover:text-white"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            )}
-            
-            {/* Error Message */}
-            {swapError && (
-              <div className="mb-3 bg-red-900/30 border border-red-800 rounded-lg p-2 text-center">
-                <span className="text-sm text-red-400">{swapError}</span>
-              </div>
-            )}
-            
-            {/* TON Only Warning */}
-            {selectedSendCurrency && selectedSendCurrency.symbol !== 'TON' && (
-              <div className="mb-3 bg-yellow-900/30 border border-yellow-800 rounded-lg p-2">
-                <div className="flex items-start">
-                  <AlertTriangle className="h-5 w-5 text-yellow-500 mr-2 flex-shrink-0 mt-0.5" />
-                  <span className="text-sm text-yellow-400">
-                    Currently, only sending TON is supported through TON Connect. Please select TON as your send currency.
-                  </span>
-                </div>
-              </div>
-            )}
-            
-            {/* Send Section */}
-            <div className="mb-4">
-              <div className="text-sm text-gray-400 mb-1">You send</div>
-              <div className="flex items-center bg-gray-800 rounded-lg p-3">
-                <input
-                  type="text"
-                  value={sendAmount}
-                  onChange={handleSendAmountChange}
-                  className="bg-transparent text-2xl w-full outline-none"
-                />
-                <div className="relative">
+                <p className="text-gray-400 text-sm mb-3">{voucher.description}</p>
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center text-blue-400">
+                    <Diamond className="h-4 w-4 mr-1" />
+                    <span>{voucher.price} TON</span>
+                  </div>
                   <button 
-                    onClick={() => setShowCurrencyDropdown(!showCurrencyDropdown)}
-                    className="flex items-center space-x-2 bg-gray-700 px-3 py-1 rounded-lg"
+                    className={`px-3 py-1 rounded-lg text-sm ${
+                      isPurchasing && activeVoucher?.id === voucher.id
+                        ? 'bg-gray-600 cursor-not-allowed'
+                        : 'bg-blue-600 hover:bg-blue-700'
+                    }`}
+                    onClick={() => purchaseVoucher(voucher)}
+                    disabled={isPurchasing}
                   >
-                    {selectedSendCurrency ? (
-                      <>
-                        {selectedSendCurrency.icon}
-                        <span>{selectedSendCurrency.symbol}</span>
-                        <ChevronDown className="h-4 w-4" />
-                      </>
-                    ) : (
-                      <span>Select</span>
-                    )}
+                    {isPurchasing && activeVoucher?.id === voucher.id
+                      ? 'Processing...'
+                      : activeVoucher?.id === voucher.id
+                      ? `Active (${getVoucherStatusText(activeVoucher)})`
+                      : 'Buy Now'}
                   </button>
-                  
-                  {showCurrencyDropdown && (
-                    <div className="absolute right-0 mt-1 w-48 bg-gray-800 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto">
-                      {isLoadingCurrencies ? (
-                        <div className="p-3 text-center text-gray-400">
-                          <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-1"></div>
-                          Loading...
-                        </div>
-                      ) : (
-                        availableCurrencies.map((currency) => (
-                          <button
-                            key={currency.id}
-                            className={`w-full text-left p-3 flex items-center space-x-2 hover:bg-gray-700 ${
-                              selectedSendCurrency?.id === currency.id ? 'bg-blue-900/30' : ''
-                            }`}
-                            onClick={() => {
-                              setSelectedSendCurrency(currency);
-                              setShowCurrencyDropdown(false);
-                            }}
-                          >
-                            {currency.icon}
-                            <div>
-                              <div>{currency.symbol}</div>
-                              <div className="text-xs text-gray-400">{currency.name}</div>
-                            </div>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  )}
                 </div>
               </div>
-              <div className="text-xs text-gray-500 mt-1">
-                {selectedSendCurrency && `$${(parseFloat(sendAmount || '0') * selectedSendCurrency.rate).toFixed(2)}`}
-              </div>
-            </div>
-            
-            {/* Arrow */}
-            <div className="flex justify-center my-2">
-              <button 
-                onClick={handleSwapCurrencies}
-                className="p-2 rounded-full bg-gray-800 hover:bg-gray-700"
-              >
-                <ArrowDownUp className="text-gray-400" />
-              </button>
-            </div>
-            
-            {/* Receive Section */}
-            <div>
-              <div className="text-sm text-gray-400 mb-1">You receive</div>
-              <div className="flex items-center bg-gray-800 rounded-lg p-3">
-                <div className="text-2xl w-full">{receiveAmount}</div>
-                <div className="relative">
-                  <button 
-                    onClick={() => setShowReceiveCurrencyDropdown(!showReceiveCurrencyDropdown)}
-                    className="flex items-center space-x-2 bg-gray-700 px-3 py-1 rounded-lg"
-                  >
-                    {selectedReceiveCurrency ? (
-                      <>
-                        {selectedReceiveCurrency.icon}
-                        <span>{selectedReceiveCurrency.symbol}</span>
-                        <ChevronDown className="h-4 w-4" />
-                      </>
-                    ) : (
-                      <span>Select</span>
-                    )}
-                  </button>
-                  
-                  {showReceiveCurrencyDropdown && (
-                    <div className="absolute right-0 mt-1 w-48 bg-gray-800 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto">
-                      {isLoadingCurrencies ? (
-                        <div className="p-3 text-center text-gray-400">
-                          <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-1"></div>
-                          Loading...
-                        </div>
-                      ) : (
-                        availableCurrencies.map((currency) => (
-                          <button
-                            key={currency.id}
-                            className={`w-full text-left p-3 flex items-center space-x-2 hover:bg-gray-700 ${
-                              selectedReceiveCurrency?.id === currency.id ? 'bg-blue-900/30' : ''
-                            }`}
-                            onClick={() => {
-                              setSelectedReceiveCurrency(currency);
-                              setShowReceiveCurrencyDropdown(false);
-                            }}
-                          >
-                            {currency.icon}
-                            <div>
-                              <div>{currency.symbol}</div>
-                              <div className="text-xs text-gray-400">{currency.name}</div>
-                            </div>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="text-xs text-gray-500 mt-1">
-                {selectedReceiveCurrency && `$${(parseFloat(receiveAmount || '0') * selectedReceiveCurrency.rate).toFixed(2)}`}
-              </div>
-            </div>
+            ))}
           </div>
           
-          {/* Action Buttons */}
-          <div className="space-y-2">
-            {/* Connect/Swap Button */}
-            <button 
-              className={`w-full py-3 rounded-lg text-center font-medium ${
-                isSwapping 
-                  ? 'bg-gray-700 cursor-not-allowed' 
-                  : isConnected 
-                    ? selectedSendCurrency?.symbol !== 'TON'
-                      ? 'bg-gray-600 cursor-not-allowed'
-                      : 'bg-blue-600 hover:bg-blue-700' 
-                    : 'bg-blue-500 hover:bg-blue-600'
-              }`}
-              onClick={handleSwap}
-              disabled={isSwapping || (isConnected && selectedSendCurrency?.symbol !== 'TON')}
-            >
-              {isSwapping ? (
-                <div className="flex items-center justify-center">
-                  <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-                  <span>Processing...</span>
-                </div>
-              ) : !isConnected ? 'Connect Wallet' : 
-                 selectedSendCurrency?.symbol !== 'TON' ? 'Select TON to Send' : 'Swap'}
-            </button>
-            
-            {/* Voucher Button - Only show when connected */}
-            {isConnected && (
-              <button 
-                className="w-full py-3 rounded-lg text-center font-medium bg-indigo-600 hover:bg-indigo-700 flex items-center justify-center"
-                onClick={() => setShowVoucherModal(true)}
-              >
-                <Ticket className="h-4 w-4 mr-2" />
-                {activeVoucher ? 'Change Voucher' : 'Buy Voucher'}
-              </button>
-            )}
-          </div>
-          
-          {/* Disclaimer */}
           <div className="mt-4 text-xs text-gray-500 text-center">
-            <p>All transactions are processed through TON Connect.</p>
-            <p className="mt-1">Currently, only TON can be sent directly through the wallet.</p>
+            Vouchers are applied automatically to all future exchanges (limit: 3 transactions per voucher)
           </div>
         </div>
       </div>
+    )}
 
-      {/* Voucher Modal */}
-      {showVoucherModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 rounded-xl p-5 w-full max-w-md">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold">Select a Voucher</h3>
-              <button 
-                onClick={() => setShowVoucherModal(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            
-            <div className="space-y-3">
-              {vouchers.map((voucher) => (
-                <div 
-                  key={voucher.id}
-                  className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                    activeVoucher?.id === voucher.id 
-                      ? 'border-blue-500 bg-blue-900/20' 
-                      : 'border-gray-700 hover:border-gray-500'
-                  }`}
-                >
-                  <div className="flex justify-between items-center mb-2">
-                    <h4 className="font-medium">{voucher.name}</h4>
-                    <div className="bg-blue-900/50 px-2 py-1 rounded text-sm">
-                      +{voucher.bonus}%
-                    </div>
-                  </div>
-                  <p className="text-gray-400 text-sm mb-3">{voucher.description}</p>
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center text-blue-400">
-                      <Diamond className="h-4 w-4 mr-1" />
-                      <span>{voucher.price} TON</span>
-                    </div>
-                    <button 
-                      className={`px-3 py-1 rounded-lg text-sm ${
-                        isPurchasing && activeVoucher?.id === voucher.id
-                          ? 'bg-gray-600 cursor-not-allowed'
-                          : 'bg-blue-600 hover:bg-blue-700'
-                      }`}
-                      onClick={() => purchaseVoucher(voucher)}
-                      disabled={isPurchasing}
-                    >
-                      {isPurchasing && activeVoucher?.id === voucher.id
-                        ? 'Processing...'
-                        : activeVoucher?.id === voucher.id
-                        ? `Active (${getVoucherStatusText(activeVoucher)})`
-                        : 'Buy Now'}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            
-            <div className="mt-4 text-xs text-gray-500 text-center">
-              Vouchers are applied automatically to all future exchanges (limit: 3 transactions per voucher)
-            </div>
-          </div>
-        </div>
-      )}
+    {/* Admin Panel */}
+    {showAdminPanel && (
+      <AdminPanel onClose={() => {
+        setShowAdminPanel(false);
+        // Update URL without reloading the page
+        window.history.pushState({}, '', '/');
+      }} />
+    )}
 
-      {/* Admin Panel */}
-      {showAdminPanel && (
-        <AdminPanel onClose={() => {
-          setShowAdminPanel(false);
-          // Update URL without reloading the page
-          window.history.pushState({}, '', '/');
-        }} />
-      )}
-
-      {/* Footer */}
-      <footer className="w-full p-4 text-center text-gray-500 text-sm">
-        <div className="mb-1">SUPPORT</div>
-        <div>Copyright © 2023 FastSwap</div>
-      </footer>
-    </div>
-  );
+    {/* Footer */}
+    <footer className="w-full p-4 text-center text-gray-500 text-sm">
+      <div className="mb-1">SUPPORT</div>
+      <div>Copyright © 2023 FastSwap</div>
+    </footer>
+  </div>
+);
 }
 
 export default App;
